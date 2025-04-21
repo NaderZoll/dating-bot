@@ -360,21 +360,28 @@ async def on_shutdown(*args, **kwargs):
     except Exception as e:
         print(f"Failed to delete webhook: {e}")
 
+# Тестовый маршрут для проверки доступности Render
+async def test_route(request):
+    return web.Response(text="Render is working!")
+
 # Обновлённый запуск бота
 if __name__ == "__main__":
     app = web.Application()
     app.add_routes([
         web.get("/vk_callback", vk_callback),
-      
+        web.get("/twitch_callback", twitch_callback),
+        web.get("/test", test_route),
     ])
+    print("Registering webhook handler...")
     webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     webhook_requests_handler.register(app, path="/webhook")
+    print("Webhook handler registered")
     setup_application(app, dp, bot=bot)
 
     # Устанавливаем вебхук вручную перед запуском
     async def start_bot():
         try:
-            webhook_url = "https://dating-bot.onrender.com/webhook"
+            webhook_url = "https://dating-bot-p9ks.onrender.com/webhook"
             print(f"Setting webhook to: {webhook_url}")
             await bot.set_webhook(webhook_url)
             print(f"Webhook successfully set to {webhook_url}")

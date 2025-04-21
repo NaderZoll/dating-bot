@@ -342,11 +342,14 @@ async def vk_callback(request):
 
 
 # Настройка вебхуков
-async def on_startup(_):
-    await bot.set_webhook(f"https://dating-bot.onrender.com/webhook")
+async def on_startup(dispatcher: Dispatcher):
+    webhook_url = "https://dating-bot.onrender.com/webhook"
+    await bot.set_webhook(webhook_url)
+    print(f"Webhook set to {webhook_url}")
 
-async def on_shutdown(_):
+async def on_shutdown(dispatcher: Dispatcher):
     await bot.delete_webhook()
+    print("Webhook deleted")
 
 # Обновлённый запуск бота
 if __name__ == "__main__":

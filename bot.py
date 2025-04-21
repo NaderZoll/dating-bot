@@ -1,5 +1,6 @@
 import asyncio
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -7,13 +8,19 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
+import pymongo
+import requests
+from urllib.parse import urlencode
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
-import pymongo
 
 # Загрузка переменных окружения
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+VK_CLIENT_ID = os.getenv("VK_CLIENT_ID")
+VK_CLIENT_SECRET = os.getenv("VK_CLIENT_SECRET")
+VK_REDIRECT_URI = os.getenv("VK_REDIRECT_URI")
+
 
 # Инициализация бота
 bot = Bot(token=BOT_TOKEN)
@@ -39,29 +46,47 @@ class ProfileStates(StatesGroup):
 
 # Команда /start
 @dp.message(Command("start"))
-async def start_command(message: types.Message):
+async def start_command(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     username = message.from_user.username or "No username"
 
-    # Проверка, есть ли пользователь в базе
     user = users_collection.find_one({"user_id": user_id})
     if not user:
         users_collection.insert_one({
             "user_id": user_id,
             "username": username,
+            "auth": {"telegram": True, "vk": False, "twitch": False},
             "profile": {},
             "location": {},
             "likes": [],
-            "liked_by": []
+            "liked_by": [],
+            "chats": {},
+            "reports": [],
+            "agreed_to_privacy": False
         })
 
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Указать местоположение", callback_data="set_location")]
-    ])
-    await message.reply(
-        f"Привет, {username}! Это бот для знакомств. Укажи местоположение и заполни анкету:",
-        reply_markup=keyboard
-    )
+    if user and user.get("agreed_to_privacy", False):
+        vk_auth_url = f"https://oauth.vk.com/authorize?{urlencode({'client_id': VK_CLIENT_ID, 'redirect_uri': VK_REDIRECT_URI, 'response_type': 'code', 'state': str(user_id)})}"
+        twitch_auth_url = f"https://id.twitch.tv/oauth2/authorize?{urlencode({'client_id': TWITCH_CLIENT_ID, 'redirect_uri': TWITCH_REDIRECT_URI, 'response_type': 'code', 'scope': 'user:read:subscriptions', 'state': str(user_id)})}"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Войти через ВКонтакте", url=vk_auth_url)],
+            [InlineKeyboardButton(text="Войти через Twitch", url=twitch_auth_url)],
+            [InlineKeyboardButton(text="Указать местоположение", callback_data="set_location")]
+        ])
+        await message.reply(
+            f"Привет, {username}! Это бот для знакомств. Авторизуйся и укажи местоположение:",
+            reply_markup=keyboard
+        )
+    else:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Согласен", callback_data="agree_privacy")]
+        ])
+        await message.reply(
+            "Пожалуйста, согласись с политикой конфиденциальности перед использованием бота.\n"
+            "Ознакомиться: /privacy",
+            reply_markup=keyboard
+        )
 
 # Обработка местоположения
 @dp.callback_query(lambda c: c.data == "set_location")
@@ -268,6 +293,68 @@ async def on_shutdown(_):
 # Обновлённый запуск бота
 if __name__ == "__main__":
     app = web.Application()
+    webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
+    webhook_requests_handler.register(app, path="/webhook")
+    setup_application(app, dp, bot=bot)
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
+    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+
+    # Обработка OAuth для ВКонтакте
+async def vk_callback(request):
+    code = request.query.get("code")
+    state = request.query.get("state")  # Telegram user_id
+    if not code or not state:
+        return web.Response(text="Ошибка авторизации VK")
+
+    # Обмен code на access_token
+    response = requests.get(
+        f"https://oauth.vk.com/access_token?client_id={VK_CLIENT_ID}&client_secret={VK_CLIENT_SECRET}&redirect_uri={VK_REDIRECT_URI}&code={code}"
+    )
+    data = response.json()
+    if "access_token" not in data:
+        return web.Response(text="Ошибка получения токена VK")
+
+    # Получение данных пользователя
+    user_response = requests.get(
+        f"https://api.vk.com/method/users.get?access_token={data['access_token']}&v=5.131"
+    )
+    user_data = user_response.json()
+    if "response" not in user_data or not user_data["response"]:
+        return web.Response(text="Ошибка получения данных VK")
+
+    # Сохранение данных
+    vk_user = user_data["response"][0]
+    user_id = int(state)
+    users_collection.update_one(
+        {"user_id": user_id},
+        {"$set": {
+            "auth.vk": True,
+            "vk_data": {
+                "id": vk_user["id"],
+                "first_name": vk_user["first_name"],
+                "last_name": vk_user["last_name"]
+            }
+        }}
+    )
+    await bot.send_message(user_id, f"Авторизация через ВКонтакте успешна! Имя: {vk_user['first_name']}")
+    return web.Response(text=f"Авторизация VK успешна! Имя: {vk_user['first_name']}")
+
+
+# Настройка вебхуков
+async def on_startup(_):
+    await bot.set_webhook(f"https://dating-bot.onrender.com/webhook")
+
+async def on_shutdown(_):
+    await bot.delete_webhook()
+
+# Обновлённый запуск бота
+if __name__ == "__main__":
+    app = web.Application()
+    app.add_routes([
+        web.get("/vk_callback", vk_callback),
+        web.get("/twitch_callback", twitch_callback)
+    ])
     webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     webhook_requests_handler.register(app, path="/webhook")
     setup_application(app, dp, bot=bot)

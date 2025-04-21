@@ -342,14 +342,24 @@ async def vk_callback(request):
 
 
 # Настройка вебхуков
-async def on_startup(dispatcher: Dispatcher):
-    webhook_url = "https://dating-bot.onrender.com/webhook"
-    await bot.set_webhook(webhook_url)
-    print(f"Webhook set to {webhook_url}")
+async def on_startup(*args, **kwargs):
+    try:
+        print("Starting webhook setup...")
+        webhook_url = "https://dating-bot.onrender.com/webhook"
+        print(f"Setting webhook to: {webhook_url}")
+        await bot.set_webhook(webhook_url)
+        print(f"Webhook successfully set to {webhook_url}")
+    except Exception as e:
+        print(f"Failed to set webhook: {e}")
+        raise  # Перебрасываем исключение, чтобы увидеть его в логах Render
 
-async def on_shutdown(dispatcher: Dispatcher):
-    await bot.delete_webhook()
-    print("Webhook deleted")
+async def on_shutdown(*args, **kwargs):
+    try:
+        print("Removing webhook...")
+        await bot.delete_webhook()
+        print("Webhook successfully deleted")
+    except Exception as e:
+        print(f"Failed to delete webhook: {e}")
 
 # Обновлённый запуск бота
 if __name__ == "__main__":

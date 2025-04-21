@@ -67,11 +67,10 @@ async def start_command(message: types.Message, state: FSMContext):
 
     if user and user.get("agreed_to_privacy", False):
         vk_auth_url = f"https://oauth.vk.com/authorize?{urlencode({'client_id': VK_CLIENT_ID, 'redirect_uri': VK_REDIRECT_URI, 'response_type': 'code', 'state': str(user_id)})}"
-        twitch_auth_url = f"https://id.twitch.tv/oauth2/authorize?{urlencode({'client_id': TWITCH_CLIENT_ID, 'redirect_uri': TWITCH_REDIRECT_URI, 'response_type': 'code', 'scope': 'user:read:subscriptions', 'state': str(user_id)})}"
+       
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Войти через ВКонтакте", url=vk_auth_url)],
-            [InlineKeyboardButton(text="Войти через Twitch", url=twitch_auth_url)],
             [InlineKeyboardButton(text="Указать местоположение", callback_data="set_location")]
         ])
         await message.reply(
@@ -366,7 +365,7 @@ if __name__ == "__main__":
     app = web.Application()
     app.add_routes([
         web.get("/vk_callback", vk_callback),
-        web.get("/twitch_callback", twitch_callback)
+      
     ])
     webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     webhook_requests_handler.register(app, path="/webhook")

@@ -73,7 +73,7 @@ async def privacy_accepted(message: types.Message):
     users_collection.update_one({"user_id": user_id}, {"$set": {"privacy_accepted": True}}, upsert=True)
     await message.answer("Спасибо! Теперь можно начать.", reply_markup=get_main_menu())
 
-# Заполнение анкеты
+# Обработчик заполнения анкеты
 @dp.message(lambda message: message.text == "Заполнить анкету")
 async def fill_profile(message: types.Message):
     user_id = message.from_user.id
@@ -108,7 +108,7 @@ async def save_interests(message: types.Message):
     users_collection.update_one({"user_id": user_id}, {"$set": {"interests": interests}}, upsert=True)
     await message.answer("Анкета заполнена!", reply_markup=get_main_menu())
 
-# Поиск пары
+# Обработчик поиска пары
 @dp.message(lambda message: message.text == "Найти пару")
 async def find_match(message: types.Message):
     user_id = message.from_user.id
@@ -127,7 +127,52 @@ async def find_match(message: types.Message):
         for match in matches:
             await message.answer(f"Найдена пара: {match.get('name', 'Без имени')} ({match.get('age', 'не указан')})")
 
-# Обработчик вебхука
+# Авторизация через VK и Twitch
+async def oauth_callback(request, platform):
+    code = request.query.get("code")
+    user_id = request.query.get("state")
+
+    if not code or not user_id:
+        return web.Response(text=f"{platform} Authorization failed: Missing data")
+
+    try:
+        if platform == "VK":
+            token_url = "https://oauth.vk.com/access_token"
+            params = {
+                "client_id": os.getenv("VK_CLIENT_ID"),
+                "client_secret": os.getenv("VK_CLIENT_SECRET"),
+                "redirect_uri": os.getenv("VK_REDIRECT_URI"),
+                "code": code
+            }
+        else:
+            token_url = "https://id.twitch.tv/oauth2/token"
+            params = {
+                "client_id": os.getenv("TWITCH_CLIENT_ID"),
+                "client_secret": os.getenv("TWITCH_CLIENT_SECRET"),
+                "code": code,
+                "grant_type": "authorization_code",
+                "redirect_uri": os.getenv("TWITCH_REDIRECT_URI")
+            }
+
+        response = requests.post(token_url, params=params)
+        data = response.json()
+
+        if "access_token" in data:
+            users_collection.update_one({"user_id": int(user_id)}, {"$set": {f"{platform.lower()}_token": data["access_token"]}}, upsert=True)
+            return web.Response(text=f"{platform} Authorization successful!")
+        else:
+            return web.Response(text=f"{platform} Authorization failed: {data.get('error_description', 'Unknown error')}")
+    except Exception as e:
+        return web.Response(text=f"{platform} Authorization failed: {str(e)}")
+
+# Запуск бота
+async def start_bot():
+    try:
+        await bot.set_webhook("https://dating-bot-p9ks.onrender.com/webhook")
+        print("Webhook set successfully.")
+    except Exception as e:
+        print(f"Webhook setup failed: {e}")
+
 async def webhook_handler(request):
     print("Received webhook request")
     try:
@@ -138,16 +183,10 @@ async def webhook_handler(request):
         print(f"Error processing webhook: {e}")
         return web.Response(status=500)
 
-# Запуск бота
-async def start_bot():
-    try:
-        await bot.set_webhook("https://dating-bot-p9ks.onrender.com/webhook")
-        print("Webhook set successfully.")
-    except Exception as e:
-        print(f"Webhook setup failed: {e}")
-
 app = web.Application()
 app.add_routes([
+    web.get("/vk_callback", lambda r: oauth_callback(r, "VK")),
+    web.get("/twitch_callback", lambda r: oauth_callback(r, "Twitch")),
     web.post("/webhook", webhook_handler),
 ])
 

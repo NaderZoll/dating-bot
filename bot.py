@@ -7,6 +7,8 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 import pymongo
 
 # Загрузка переменных окружения
@@ -22,7 +24,7 @@ dp = Dispatcher(storage=storage)
 # Если используете локальный MongoDB, оставьте как есть
 # Если используете MongoDB Atlas, замените на вашу строку подключения, например:
 # client = pymongo.MongoClient("mongodb+srv://admin:yourpassword@cluster0.mongodb.net/")
-client = pymongo.MongoClient("mongodb+srv://devilfrost1:QxIV10hynXCEl48M@datebot.ln0utwa.mongodb.net/?retryWrites=true&w=majority&appName=DateBot")
+client = pymongo.MongoClient(os.getenv("MONGODB_URI"))
 db = client["dating_bot"]
 users_collection = db["users"]
 
@@ -256,9 +258,19 @@ async def chat_command(message: types.Message):
         return
     await message.reply("Чат с пользователем (функция в разработке).")
 
-# Запуск бота
-async def main():
-    await dp.start_polling(bot)
+# Настройка вебхуков
+async def on_startup(_):
+    await bot.set_webhook(f"https://dating-bot.onrender.com/webhook")
 
+async def on_shutdown(_):
+    await bot.delete_webhook()
+
+# Обновлённый запуск бота
 if __name__ == "__main__":
-    asyncio.run(main())
+    app = web.Application()
+    webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
+    webhook_requests_handler.register(app, path="/webhook")
+    setup_application(app, dp, bot=bot)
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
+    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))

@@ -355,7 +355,7 @@ async def on_startup(*args, **kwargs):
 
 async def on_shutdown(*args, **kwargs):
     try:
-        print("Removing webhook...")
+        print("Removing c webhook...")
         await bot.delete_webhook()
         print("Webhook successfully deleted")
     except Exception as e:
@@ -371,6 +371,31 @@ if __name__ == "__main__":
     webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     webhook_requests_handler.register(app, path="/webhook")
     setup_application(app, dp, bot=bot)
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
-    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+
+    # Устанавливаем вебхук вручную перед запуском
+    async def start_bot():
+        try:
+            webhook_url = "https://dating-bot.onrender.com/webhook"
+            print(f"Setting webhook to: {webhook_url}")
+            await bot.set_webhook(webhook_url)
+            print(f"Webhook successfully set to {webhook_url}")
+        except Exception as e:
+            print(f"Failed to set webhook: {e}")
+            raise
+
+    async def stop_bot():
+        try:
+            print("Removing webhook...")
+            await bot.delete_webhook()
+            print("Webhook successfully deleted")
+        except Exception as e:
+            print(f"Failed to delete webhook: {e}")
+
+    # Запускаем приложение
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(start_bot())  # Устанавливаем вебхук
+        web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    finally:
+        loop.run_until_complete(stop_bot())  # Удаляем вебхук при завершении
+        loop.close()

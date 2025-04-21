@@ -12,13 +12,27 @@ import requests
 load_dotenv()
 
 # Инициализация бота и диспетчера
-bot = Bot(token=os.getenv("BOT_TOKEN"))
-dp = Dispatcher()
+print("Initializing bot...")
+try:
+    bot = Bot(token=os.getenv("BOT_TOKEN"))
+    dp = Dispatcher()
+    print("Bot initialized successfully.")
+except Exception as e:
+    print(f"Failed to initialize bot: {e}")
+    raise
 
 # Подключение к MongoDB
-mongo_client = MongoClient(os.getenv("MONGODB_URI"))
-db = mongo_client["dating_bot"]
-users_collection = db["users"]
+print("Connecting to MongoDB...")
+try:
+    mongo_client = MongoClient(os.getenv("MONGODB_URI"))
+    db = mongo_client["dating_bot"]
+    users_collection = db["users"]
+    # Проверяем подключение
+    mongo_client.server_info()
+    print("Connected to MongoDB successfully.")
+except Exception as e:
+    print(f"Failed to connect to MongoDB: {e}")
+    raise
 
 # Клавиатура для согласия с политикой конфиденциальности
 def get_privacy_keyboard():
@@ -235,13 +249,19 @@ async def twitch_callback(request):
 
 # Тестовый маршрут для проверки доступности Render
 async def test_route(request):
+    print("Received request to /test")
     return web.Response(text="Render is working!")
 
 # Обработчик вебхука
 async def webhook_handler(request):
+    print("Received webhook request")
     try:
+        print("Parsing JSON from request...")
         update = await request.json()
+        print(f"Update received: {update}")
+        print("Feeding update to aiogram...")
         await dp.feed_raw_update(bot, update)
+        print("Update processed successfully")
         return web.Response()
     except Exception as e:
         print(f"Error processing webhook: {e}")
@@ -249,13 +269,15 @@ async def webhook_handler(request):
 
 # Обновлённый запуск бота
 if __name__ == "__main__":
+    print("Starting application...")
     app = web.Application()
     app.add_routes([
         web.get("/vk_callback", vk_callback),
         web.get("/twitch_callback", twitch_callback),
         web.get("/test", test_route),
-        web.post("/webhook", webhook_handler),  # Добавляем маршрут для вебхука вручную
+        web.post("/webhook", webhook_handler),
     ])
+    print("Routes configured successfully.")
 
     # Устанавливаем вебхук вручную перед запуском
     async def start_bot():
@@ -278,9 +300,12 @@ if __name__ == "__main__":
 
     # Запускаем приложение
     loop = asyncio.get_event_loop()
+    print("Event loop created.")
     try:
         loop.run_until_complete(start_bot())  # Устанавливаем вебхук
+        print("Starting web app...")
         web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
     finally:
         loop.run_until_complete(stop_bot())  # Удаляем вебхук при завершении
         loop.close()
+        print("Application stopped.")
